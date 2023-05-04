@@ -16,7 +16,8 @@
 
 #define FAKE_EXE_LENGTH 0x10
 
-extern int errno;
+
+int remap(const char *path);
 
 int dprint(const char *fmt, ...)
 {
@@ -30,13 +31,33 @@ int dprint(const char *fmt, ...)
     return n;
 }
 
-int prctl_proc_name(char *name)
+int set_proc_name(const char *name)
 {
     int ret = prctl(PR_SET_NAME, name);
     if (ret < 0)
     {
         perror("prctl");
+        return 1;
     }
+    return 0;
+}
+
+int set_file_path(const char *name)
+{
+    int fd = open(name, O_RDONLY);
+    remap("/proc/self/exe");
+    int ret = prctl(PR_SET_MM, PR_SET_MM_EXE_FILE, fd, 0, 0);
+    if (ret < 0) {
+        perror("prctl");
+        return 1;
+    }
+    return 0;
+}
+
+int set_cmd_line(char *argv[], const char *name)
+{
+    memset((void *)argv[0], '\0', strlen(argv[0]));
+    strcpy(argv[0], name);
     return 0;
 }
 
@@ -142,14 +163,21 @@ lbExit:
     return remapped;
 }
 
+const char *FAKE_PROCNAME = "bash";
+const char *FAKE_FILEPATH = "/bin/bash";
+const char *FAKE_CMDLINE = "-bash";
+
 void main(int argc, char *argv[])
 {
     printf("start pid: %d\n", getpid());
 
-    // modify cmdline
-    memset((void *)argv[0], '\0', strlen(argv[0]));
-    strcpy(argv[0], "-bash");
+    // modify
+    set_cmd_line(argv, FAKE_CMDLINE);
+    set_proc_name(FAKE_PROCNAME);
+    set_file_path(FAKE_FILEPATH);
+    
 
+    // fork 
     pid_t pid = fork();
     if (pid > 0)
     {
@@ -157,12 +185,8 @@ void main(int argc, char *argv[])
         return;
     }
 
-    prctl_proc_name("bash");
-
-    const char *fake = "/bin/bash";
-    int fd = open(fake, O_RDONLY);
-    remap("/proc/self/exe");
-    int ret = prctl(PR_SET_MM, PR_SET_MM_EXE_FILE, fd, 0, 0);
-
+    // start
+    system("whoami");
     sleep(600);
+    
 }
